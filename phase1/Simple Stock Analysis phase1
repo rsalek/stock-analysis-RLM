@@ -48,7 +48,7 @@ from google.colab import drive
 # ==========================================
 
 # 1. API SETUP
-API_KEY = "AIzaSyDwHjGqpWHQ7-cEpzHA1R8gg-UxOqUK8Ho "
+API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # 2. GOOGLE DRIVE PATHS
 BASE_DRIVE_PATH = os.environ.get("BASE_DRIVE_PATH", "/content/drive/My Drive/Stock_Analysis")
@@ -74,6 +74,8 @@ def setup_environment():
 
     print("📂 Mounting Google Drive...")
     drive.mount('/content/drive')
+    if not API_KEY:
+        raise EnvironmentError("❌ GEMINI_API_KEY is not set. Provide it via environment variables.")
     print(f"🔑 Configuring Gemini Client with model: {MODEL_NAME}...")
     client = genai.Client(api_key=API_KEY)
 
