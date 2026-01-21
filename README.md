@@ -1,4 +1,4 @@
-# Stock Analysis WF with RLM
+# Stock Analysis WorkFlow with RLM
 The strategy used in `stock_analysis_workflow.py` (Phase 1) is a **modular, sequential processing pipeline** that mimics the cognitive workflow of a human financial analyst. Instead of asking one giant question, it breaks the stock analysis into discrete, logical steps, where earlier steps inform later ones.
 
 Here is the step-by-step strategy from **Input** to **Results**:
