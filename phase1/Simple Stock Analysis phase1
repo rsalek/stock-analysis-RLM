@@ -215,7 +215,7 @@ def build_evidence_pack(ticker, step_num, prompt_template, k=12):
         evidence_blocks.append(f"[{location}]\\n{passage.get('text', '')}")
 
     citations = phase0_tools.cite(passages, ticker=ticker)
-    return "\\n\\n".join(evidence_blocks) + f"\n\nCitations:\n{citations}"
+    return "\n\n".join(evidence_blocks) + f"\n\nCitations:\n{citations}"
 
 # ==========================================
 # 🚀 MAIN WORKFLOW
