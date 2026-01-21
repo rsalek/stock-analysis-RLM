@@ -15,8 +15,15 @@ import shutil
 import glob
 import subprocess
 import sys
+import importlib.util
 from pathlib import Path
 
+PHASE0_AVAILABLE = importlib.util.find_spec("phase0_rlm") is not None
+if PHASE0_AVAILABLE:
+    from phase0_rlm import bm25_index as phase0_bm25_index
+    from phase0_rlm import chunking as phase0_chunking
+    from phase0_rlm import document_store as phase0_document_store
+    from phase0_rlm import tools as phase0_tools
 # ==========================================
 # 📦 DEPENDENCIES
 # ==========================================
@@ -44,7 +51,7 @@ from google.colab import drive
 API_KEY = "AIzaSyDwHjGqpWHQ7-cEpzHA1R8gg-UxOqUK8Ho "
 
 # 2. GOOGLE DRIVE PATHS
-BASE_DRIVE_PATH = "/content/drive/My Drive/Stock_Analysis"
+BASE_DRIVE_PATH = os.environ.get("BASE_DRIVE_PATH", "/content/drive/My Drive/Stock_Analysis")
 PROMPTS_DIR = os.path.join(BASE_DRIVE_PATH, "Prompts8")
 INPUT_DIR = os.path.join(BASE_DRIVE_PATH, "Input")
 RESULTS_BASE_DIR = os.path.join(BASE_DRIVE_PATH, "Results")
@@ -61,6 +68,10 @@ EXECUTION_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
 def setup_environment():
     """Mounts Drive and initializes the GenAI client."""
+    if os.environ.get("PHASE1_SMOKE") == "1":
+        print("⚠️ Smoke mode enabled. Skipping Drive mount and API setup.")
+        return None
+
     print("📂 Mounting Google Drive...")
     drive.mount('/content/drive')
     print(f"🔑 Configuring Gemini Client with model: {MODEL_NAME}...")
@@ -136,6 +147,13 @@ def extract_phase(text):
 
 def generate_with_retry(client, message_contents, max_retries=5):
     """Generates content with exponential backoff."""
+    if os.environ.get("PHASE1_SMOKE") == "1":
+        class _SmokeResponse:
+            def __init__(self, text):
+                self.text = text
+
+        return _SmokeResponse("SMOKE MODE OUTPUT")
+
     base_delay = 15
     for attempt in range(max_retries):
         try:
@@ -162,6 +180,43 @@ def archive_inputs(input_dir, results_dir):
         if os.path.isfile(src): shutil.move(src, dst)
     print("✅ Input folder cleared.")
 
+def prepare_phase0_index(input_dir):
+    if not PHASE0_AVAILABLE:
+        return False
+
+    try:
+        phase0_document_store.ingest_drive_paths([input_dir])
+        phase0_chunking.chunk_documents()
+        phase0_bm25_index.build_bm25_index()
+    except Exception as exc:
+        print(f"⚠️ Phase 0 ingest failed: {exc}")
+        return False
+    return True
+
+def build_evidence_pack(ticker, step_num, prompt_template, k=12):
+    if not PHASE0_AVAILABLE:
+        return ""
+
+    query_seed = prompt_template.replace("{TICKER}", ticker).replace("[Company Name]", ticker)
+    query = f"{ticker} step {step_num} {query_seed[:240]}"
+    results = phase0_tools.search(query, k=k, ticker=ticker)
+    passages = []
+    for result in results:
+        chunk = phase0_tools.open_chunk(result.get("doc_id"), result.get("chunk_id"))
+        if chunk:
+            passages.append(chunk)
+
+    if not passages:
+        return ""
+
+    evidence_blocks = []
+    for passage in passages:
+        location = f"{passage.get('doc_id')}:{passage.get('chunk_id')}"
+        evidence_blocks.append(f"[{location}]\\n{passage.get('text', '')}")
+
+    citations = phase0_tools.cite(passages, ticker=ticker)
+    return "\\n\\n".join(evidence_blocks) + f\"\\n\\nCitations:\\n{citations}\"
+
 # ==========================================
 # 🚀 MAIN WORKFLOW
 # ==========================================
@@ -169,12 +224,16 @@ def archive_inputs(input_dir, results_dir):
 def run_analysis():
     client = setup_environment()
 
-    ticker = input("Enter Stock Ticker (e.g., TSLA): ").upper().strip()
+    ticker = os.environ.get("PHASE1_TICKER") or input("Enter Stock Ticker (e.g., TSLA): ")
+    ticker = ticker.upper().strip()
     if not ticker: return
 
     # --- USER CONTEXT COLLECTION ---
     print("\n--- 💼 Portfolio Context (Optional but Recommended) ---")
-    has_position = input("Do you currently own this stock? (y/n): ").lower().strip() == 'y'
+    if os.environ.get("PHASE1_SMOKE") == "1":
+        has_position = False
+    else:
+        has_position = input("Do you currently own this stock? (y/n): ").lower().strip() == 'y'
 
     shares = "0"
     avg_cost = "0.00"
@@ -184,7 +243,10 @@ def run_analysis():
         shares = input("   Number of Shares: ").strip()
         avg_cost = input("   Average Cost ($): ").strip()
 
-    target_alloc_input = input("   Target Portfolio Allocation % (Default 5): ").strip()
+    if os.environ.get("PHASE1_SMOKE") == "1":
+        target_alloc_input = ""
+    else:
+        target_alloc_input = input("   Target Portfolio Allocation % (Default 5): ").strip()
     if target_alloc_input: target_alloc = target_alloc_input
 
     # Construct the Context String
@@ -202,6 +264,8 @@ def run_analysis():
 
     all_prompts = get_prompts_by_id(PROMPTS_DIR)
     kb_files = upload_knowledge_base(client, INPUT_DIR)
+    os.environ.setdefault("PHASE0_BASE_DRIVE_PATH", BASE_DRIVE_PATH)
+    phase0_ready = prepare_phase0_index(INPUT_DIR)
     detected_phase = "Unknown"
 
     print("\n⚡ STARTING ANALYSIS CHAIN ⚡")
@@ -233,6 +297,11 @@ def run_analysis():
         """
 
         final_prompt = override_header + prompt_template.replace("{TICKER}", ticker).replace("[Company Name]", ticker)
+
+        if phase0_ready:
+            evidence_pack = build_evidence_pack(ticker, step_num, prompt_template, k=12)
+            if evidence_pack:
+                final_prompt += f"\n\nEvidence:\n{evidence_pack}"
 
         # Inject Phase Logic
         if step_num == 5 or step_num == 7:
