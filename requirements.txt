@@ -1,0 +1,24 @@
+# Core runtime
+requests>=2.31.0
+tqdm>=4.66.0
+numpy>=1.23.0
+pandas>=2.0.0
+python-dotenv>=1.0.1
+
+# Gemini / Google Generative AI SDK (Phase 1)
+google-generativeai>=0.7.0
+
+# HTML parsing (for 10-K/10-Q HTML and web-saved filings)
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# PDF text extraction (choose whichever your code uses; including both is common in Colab)
+pypdf>=4.0.0
+pdfplumber>=0.11.0
+
+# Retrieval / BM25 (Phase 0)
+rank-bm25>=0.2.2
+
+# Optional utilities (safe defaults; remove if not used)
+joblib>=1.3.0
+scikit-learn>=1.3.0
