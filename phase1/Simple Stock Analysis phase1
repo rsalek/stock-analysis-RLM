@@ -72,8 +72,11 @@ def setup_environment():
         print("⚠️ Smoke mode enabled. Skipping Drive mount and API setup.")
         return None
 
-    print("📂 Mounting Google Drive...")
-    drive.mount('/content/drive')
+    if os.environ.get("PHASE1_SKIP_MOUNT") == "1":
+        print("⚠️ PHASE1_SKIP_MOUNT enabled. Skipping Drive mount.")
+    else:
+        print("📂 Mounting Google Drive...")
+        drive.mount('/content/drive')
     if not API_KEY:
         raise EnvironmentError("❌ GEMINI_API_KEY is not set. Provide it via environment variables.")
     print(f"🔑 Configuring Gemini Client with model: {MODEL_NAME}...")
